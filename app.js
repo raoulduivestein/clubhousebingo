@@ -188,6 +188,7 @@
 
   function renderRegistration() {
     const round = activeRound();
+    const isFinished = round.status === "finished";
     const prize = prizeForRound(round);
     app.innerHTML = `
       <section class="grid two-col">
@@ -195,6 +196,7 @@
           <p class="eyebrow">Registratie</p>
           <h2>Pak je kaart voordat de chaos begint</h2>
           <p class="muted">Ronde: ${escapeHtml(round.naam)}. ${round.registratie_open ? "De registratie is geopend." : "De registratie is nu gesloten."}</p>
+          ${isFinished ? `<p><strong>Deze ronde is afgelopen.</strong><br>Wacht tot de host een nieuwe ronde start. Daarna kun je opnieuw registreren.</p>` : ""}
           <p class="muted">Per ronde kan er per IP-adres maar een kaart worden aangemaakt. Als dit IP al meedoet, opent de server de bestaande kaart.</p>
           <h3>Prijs van deze ronde</h3>
           ${renderPrize(prize, true)}
@@ -237,24 +239,32 @@
 
   function renderPlayerCard() {
     const { params } = route();
-    const cardId = params.get("id") || localStorage.getItem(LAST_CARD_KEY);
     const round = activeRound();
+    const explicitCardId = params.get("id");
+    const storedCardId = localStorage.getItem(LAST_CARD_KEY);
+    const storedCard = storedCardId ? cardById(storedCardId) : null;
+    const cardId = explicitCardId || (storedCard?.ronde_id === round.ronde_id ? storedCardId : null);
     const card = cardId ? cardById(cardId) : null;
 
     if (!card) {
       app.innerHTML = `
         <section class="panel">
-          <h2>Geen kaart gevonden</h2>
-          <p class="muted">Maak eerst een bingokaart of open je persoonlijke link.</p>
+          <h2>${storedCard && storedCard.ronde_id !== round.ronde_id ? "Nieuwe ronde, nieuwe kaart" : "Geen kaart gevonden"}</h2>
+          <p class="muted">${
+            storedCard && storedCard.ronde_id !== round.ronde_id
+              ? "Je oude kaart hoort bij een vorige ronde. Voor deze ronde kun je opnieuw een kaart maken."
+              : "Maak eerst een bingokaart of open je persoonlijke link."
+          }</p>
           <div class="actions"><a class="button" href="#/registratie">Maak mijn kaart</a></div>
         </section>
       `;
       return;
     }
 
-    localStorage.setItem(LAST_CARD_KEY, card.kaart_id);
+    if (card.ronde_id === round.ronde_id) localStorage.setItem(LAST_CARD_KEY, card.kaart_id);
     const player = playerById(card.speler_id);
     const cardRound = state.rounds.find((item) => item.ronde_id === card.ronde_id) || round;
+    const isOldRoundCard = cardRound.ronde_id !== round.ronde_id;
     const prize = prizeForRound(cardRound);
     const drawings = drawingsFor(cardRound.ronde_id);
     const last = drawings.at(-1);
@@ -265,6 +275,11 @@
     app.innerHTML = `
       <section class="grid two-col">
         <div class="panel status-stack">
+          ${
+            isOldRoundCard
+              ? `<div class="claim invalid"><strong>Deze kaart hoort bij een vorige ronde.</strong><span>De actieve ronde is nu ${escapeHtml(round.naam)}. Maak een nieuwe kaart om opnieuw mee te spelen.</span><div class="actions"><a class="button" href="#/registratie">Maak nieuwe kaart</a></div></div>`
+              : ""
+          }
           <p class="eyebrow">Mijn bingokaart</p>
           <h2>${escapeHtml(player?.naam || "Speler")}</h2>
           <p class="muted">${escapeHtml(player?.clubhouse_naam || "Geen Clubhouse-naam ingevuld")}</p>
@@ -276,7 +291,7 @@
           <p><strong>Ronde:</strong> ${escapeHtml(cardRound.naam)}<br><strong>Status:</strong> ${escapeHtml(STATUS_LABELS[cardRound.status])}<br><strong>Bingo:</strong> ${escapeHtml(BINGO_TYPES[cardRound.bingo_type])}</p>
           <h3>We spelen voor</h3>
           ${renderPrize(prize, true)}
-          <button class="button warning" id="claim-bingo">Bingo!</button>
+          <button class="button warning" id="claim-bingo" ${isOldRoundCard ? "disabled" : ""}>Bingo!</button>
           ${lastClaim ? `<div class="claim ${lastClaim.status === "valid" ? "valid" : "invalid"}"><strong>${escapeHtml(lastClaim.status === "valid" ? "Geldige bingo" : "Bingo melding")}</strong><span>${escapeHtml(lastClaim.message)}</span></div>` : ""}
           <div class="field">
             <label for="personal-link">Persoonlijke link</label>
