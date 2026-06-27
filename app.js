@@ -458,6 +458,10 @@
             ${renderPrizeList(prizes)}
           </div>
           <div class="panel">
+            <h3>Oude rondes beheren</h3>
+            ${renderRoundList(state.rounds)}
+          </div>
+          <div class="panel">
             <h3>Spelers en kaartnummers</h3>
             ${renderPlayersTable(cards)}
           </div>
@@ -466,18 +470,18 @@
     `;
 
     document.querySelector("#save-round").addEventListener("click", async () => {
-      await hostPost("/api/host/round", {
+      const ok = await hostPost("/api/host/round", {
         naam: document.querySelector("#round-name").value.trim(),
         bingo_type: document.querySelector("#bingo-type").value,
         prijs_id: document.querySelector("#round-prize").value,
       });
-      toast("Ronde opgeslagen.");
+      if (ok) toast("Ronde opgeslagen.");
     });
     document.querySelector("#toggle-registration").addEventListener("click", () => hostAction("toggle-registration"));
     document.querySelector("#start-game").addEventListener("click", () => hostAction("start", "De ballenmachine draait."));
     document.querySelector("#draw-ball").addEventListener("click", async () => {
-      await hostPost("/api/host/draw", {});
-      toast("Nieuwe bal getrokken.");
+      const ok = await hostPost("/api/host/draw", {});
+      if (ok) toast("Nieuwe bal getrokken.");
     });
     document.querySelector("#pause-game").addEventListener("click", () => hostAction("pause"));
     document.querySelector("#finish-round").addEventListener("click", () => hostAction("finish", "De ronde is gesloten."));
@@ -491,7 +495,7 @@
     document.querySelector("#prize-form").addEventListener("submit", async (event) => {
       event.preventDefault();
       const form = new FormData(event.currentTarget);
-      await hostPost("/api/host/prizes", {
+      const ok = await hostPost("/api/host/prizes", {
         naam: form.get("naam"),
         soort: form.get("soort"),
         bedrag: form.get("bedrag"),
@@ -499,15 +503,47 @@
         code: form.get("code"),
         omschrijving: form.get("omschrijving"),
       });
-      toast("Prijs toegevoegd.");
+      if (ok) toast("Prijs toegevoegd.");
+    });
+    document.querySelectorAll("[data-prize-edit-form]").forEach((formNode) => {
+      formNode.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const form = new FormData(event.currentTarget);
+        const payload = {
+          prijs_id: event.currentTarget.dataset.prizeId,
+          naam: form.get("naam"),
+          soort: form.get("soort"),
+          bedrag: form.get("bedrag"),
+          logo_url: form.get("logo_url"),
+          omschrijving: form.get("omschrijving"),
+        };
+        const code = String(form.get("code") || "").trim();
+        if (code) payload.code = code;
+        const ok = await hostPost("/api/host/update-prize", payload);
+        if (ok) toast("Prijs bijgewerkt.");
+      });
+    });
+    document.querySelectorAll("[data-delete-prize]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (!window.confirm("Weet je zeker dat je deze prijs wilt verwijderen?")) return;
+        const ok = await hostPost("/api/host/delete-prize", { prijs_id: button.dataset.prizeId });
+        if (ok) toast("Prijs verwijderd.");
+      });
+    });
+    document.querySelectorAll("[data-delete-round]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (!window.confirm("Weet je zeker dat je deze oude ronde met kaarten, trekkingen en claims wilt verwijderen?")) return;
+        const ok = await hostPost("/api/host/delete-round", { ronde_id: button.dataset.roundId });
+        if (ok) toast("Ronde verwijderd.");
+      });
     });
     document.querySelectorAll("[data-award-prize]").forEach((button) => {
       button.addEventListener("click", async () => {
-        await hostPost("/api/host/award-prize", {
+        const ok = await hostPost("/api/host/award-prize", {
           claim_id: button.dataset.claimId,
           prijs_id: button.dataset.prizeId,
         });
-        toast("Prijs toegekend.");
+        if (ok) toast("Prijs toegekend.");
       });
     });
   }
@@ -572,20 +608,22 @@
         body: JSON.stringify(body),
       });
       await loadState();
+      return true;
     } catch (error) {
       if (error.message.includes("wachtwoord") || error.message.includes("PIN")) {
         hostAuthenticated = false;
         localStorage.removeItem("gekkenhuis-host-password");
         renderHostLogin(localStorage.getItem("gekkenhuis-host-user") || "");
-        return;
+        return false;
       }
       toast(error.message);
+      return false;
     }
   }
 
   async function hostAction(action, message) {
-    await hostPost("/api/host/action", { action });
-    if (message) toast(message);
+    const ok = await hostPost("/api/host/action", { action });
+    if (ok && message) toast(message);
   }
 
   function renderClaims(claims) {
@@ -647,7 +685,69 @@
 
   function renderPrizeList(prizes) {
     if (!prizes.length) return `<div class="empty">Nog geen prijzen toegevoegd.</div>`;
-    return `<div class="grid">${prizes.map((prize) => renderPrize(prize, true)).join("")}</div>`;
+    return `<div class="grid">${prizes
+      .map((prize) => {
+        const prizeId = escapeHtml(prize.prijs_id);
+        const isAwarded = prize.status === "awarded";
+        return `<form class="form claim" data-prize-edit-form data-prize-id="${prizeId}">
+          ${renderPrize(prize, true)}
+          <div class="field">
+            <label for="edit-prize-name-${prizeId}">Naam prijs</label>
+            <input id="edit-prize-name-${prizeId}" name="naam" required maxlength="120" value="${escapeHtml(prize.naam)}" />
+          </div>
+          <div class="field">
+            <label for="edit-prize-type-${prizeId}">Soort</label>
+            <input id="edit-prize-type-${prizeId}" name="soort" maxlength="60" value="${escapeHtml(prize.soort || "")}" />
+          </div>
+          <div class="field">
+            <label for="edit-prize-amount-${prizeId}">Bedrag</label>
+            <input id="edit-prize-amount-${prizeId}" name="bedrag" maxlength="40" value="${escapeHtml(prize.bedrag || "")}" />
+          </div>
+          <div class="field">
+            <label for="edit-prize-logo-${prizeId}">Logo URL</label>
+            <input id="edit-prize-logo-${prizeId}" name="logo_url" maxlength="500" value="${escapeHtml(prize.logo_url || "")}" />
+          </div>
+          <div class="field">
+            <label for="edit-prize-code-${prizeId}">Nieuwe of gewijzigde prijs code</label>
+            <input id="edit-prize-code-${prizeId}" name="code" maxlength="200" placeholder="Laat leeg om bestaande code te behouden" />
+          </div>
+          <div class="field">
+            <label for="edit-prize-description-${prizeId}">Omschrijving</label>
+            <input id="edit-prize-description-${prizeId}" name="omschrijving" maxlength="500" value="${escapeHtml(prize.omschrijving || "")}" />
+          </div>
+          <div class="actions">
+            <button class="button secondary" type="submit">Bewaar prijs</button>
+            <button class="button warning" type="button" data-delete-prize data-prize-id="${prizeId}" ${isAwarded ? "disabled" : ""}>Verwijder</button>
+          </div>
+          ${isAwarded ? `<p class="muted">Toegekende prijzen kunnen niet worden verwijderd.</p>` : ""}
+        </form>`;
+      })
+      .join("")}</div>`;
+  }
+
+  function renderRoundList(rounds) {
+    if (!rounds.length) return `<div class="empty">Nog geen rondes gevonden.</div>`;
+    const activeRoundId = state.activeRoundId;
+    const orderedRounds = [...rounds].sort((a, b) => new Date(b.aangemaakt_op || 0) - new Date(a.aangemaakt_op || 0));
+    return `<div class="table-wrap"><table>
+      <thead><tr><th scope="col">Ronde</th><th scope="col">Status</th><th scope="col">Kaarten</th><th scope="col">Ballen</th><th scope="col">Claims</th><th scope="col">Actie</th></tr></thead>
+      <tbody>
+        ${orderedRounds
+          .map((round) => {
+            const isActive = round.ronde_id === activeRoundId;
+            const roundId = escapeHtml(round.ronde_id);
+            return `<tr>
+              <td>${escapeHtml(round.naam)}${isActive ? ` <span class="pill">Actief</span>` : ""}</td>
+              <td>${escapeHtml(STATUS_LABELS[round.status] || round.status)}</td>
+              <td>${state.cards.filter((card) => card.ronde_id === round.ronde_id).length}</td>
+              <td>${drawingsFor(round.ronde_id).length}</td>
+              <td>${claimsFor(round.ronde_id).length}</td>
+              <td><button class="button warning" type="button" data-delete-round data-round-id="${roundId}" ${isActive ? "disabled" : ""}>Verwijder</button></td>
+            </tr>`;
+          })
+          .join("")}
+      </tbody>
+    </table></div>`;
   }
 
   function renderPlayersTable(cards) {

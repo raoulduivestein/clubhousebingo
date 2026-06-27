@@ -381,13 +381,21 @@ function updateRound(body) {
   });
 }
 
+function prizeInput(body) {
+  const input = {
+    naam: String(body.naam || "").trim().slice(0, 120),
+    soort: String(body.soort || "Cadeaubon").trim().slice(0, 60),
+    bedrag: String(body.bedrag || "").trim().slice(0, 40),
+    logo_url: String(body.logo_url || "").trim().slice(0, 500),
+    omschrijving: String(body.omschrijving || "").trim().slice(0, 500),
+    code: String(body.code || "").trim().slice(0, 200),
+  };
+  return input;
+}
+
 function createPrize(body) {
-  const naam = String(body.naam || "").trim().slice(0, 120);
-  const soort = String(body.soort || "Cadeaubon").trim().slice(0, 60);
-  const bedrag = String(body.bedrag || "").trim().slice(0, 40);
-  const logoUrl = String(body.logo_url || "").trim().slice(0, 500);
-  const omschrijving = String(body.omschrijving || "").trim().slice(0, 500);
-  const code = String(body.code || "").trim().slice(0, 200);
+  const input = prizeInput(body);
+  const { naam } = input;
   if (!naam) {
     const err = new Error("Prijsnaam is verplicht.");
     err.statusCode = 400;
@@ -397,12 +405,7 @@ function createPrize(body) {
   return mutateState((state) => {
     const prize = {
       prijs_id: uid("prijs"),
-      naam,
-      soort,
-      bedrag,
-      logo_url: logoUrl,
-      omschrijving,
-      code,
+      ...input,
       status: "available",
       toegekend_aan_claim_id: null,
       toegekend_op: null,
@@ -410,6 +413,81 @@ function createPrize(body) {
     };
     state.prizes.push(prize);
     return { prize };
+  });
+}
+
+function updatePrize(body) {
+  const prizeId = String(body.prijs_id || "");
+  const input = prizeInput(body);
+  if (!Object.prototype.hasOwnProperty.call(body, "code") || !input.code) {
+    delete input.code;
+  }
+  if (!input.naam) {
+    const err = new Error("Prijsnaam is verplicht.");
+    err.statusCode = 400;
+    throw err;
+  }
+  return mutateState((state) => {
+    const prize = prizeById(state, prizeId);
+    if (!prize) {
+      const err = new Error("Deze prijs bestaat niet.");
+      err.statusCode = 404;
+      throw err;
+    }
+    Object.assign(prize, input, { bijgewerkt_op: nowIso() });
+    return { prize };
+  });
+}
+
+function deletePrize(body) {
+  const prizeId = String(body.prijs_id || "");
+  return mutateState((state) => {
+    const prize = prizeById(state, prizeId);
+    if (!prize) {
+      const err = new Error("Deze prijs bestaat niet.");
+      err.statusCode = 404;
+      throw err;
+    }
+    if (prize.status === "awarded" || prize.toegekend_aan_claim_id) {
+      const err = new Error("Deze prijs is al toegekend en kan niet worden verwijderd.");
+      err.statusCode = 409;
+      throw err;
+    }
+    state.prizes = state.prizes.filter((item) => item.prijs_id !== prizeId);
+    for (const round of state.rounds) {
+      if (round.prijs_id === prizeId) round.prijs_id = null;
+    }
+    return { deleted: true };
+  });
+}
+
+function deleteRound(body) {
+  const roundId = String(body.ronde_id || "");
+  return mutateState((state) => {
+    const round = state.rounds.find((item) => item.ronde_id === roundId);
+    if (!round) {
+      const err = new Error("Deze ronde bestaat niet.");
+      err.statusCode = 404;
+      throw err;
+    }
+    if (round.ronde_id === state.activeRoundId) {
+      const err = new Error("De actieve ronde kan niet worden verwijderd. Start eerst een nieuwe ronde.");
+      err.statusCode = 409;
+      throw err;
+    }
+    const removedClaimIds = new Set(state.claims.filter((claim) => claim.ronde_id === roundId).map((claim) => claim.claim_id));
+    state.rounds = state.rounds.filter((item) => item.ronde_id !== roundId);
+    state.cards = state.cards.filter((card) => card.ronde_id !== roundId);
+    state.drawings = state.drawings.filter((drawing) => drawing.ronde_id !== roundId);
+    state.claims = state.claims.filter((claim) => claim.ronde_id !== roundId);
+    for (const prize of state.prizes) {
+      if (removedClaimIds.has(prize.toegekend_aan_claim_id)) {
+        prize.status = "available";
+        prize.toegekend_aan_claim_id = null;
+        prize.toegekend_op = null;
+      }
+    }
+    return { deleted: true };
   });
 }
 
@@ -633,8 +711,20 @@ async function handleApi(req, res, pathname) {
     sendJson(res, 200, createPrize(body));
     return;
   }
+  if (pathname === "/api/host/update-prize" && req.method === "POST") {
+    sendJson(res, 200, updatePrize(body));
+    return;
+  }
+  if (pathname === "/api/host/delete-prize" && req.method === "POST") {
+    sendJson(res, 200, deletePrize(body));
+    return;
+  }
   if (pathname === "/api/host/award-prize" && req.method === "POST") {
     sendJson(res, 200, awardPrize(body));
+    return;
+  }
+  if (pathname === "/api/host/delete-round" && req.method === "POST") {
+    sendJson(res, 200, deleteRound(body));
     return;
   }
   if (pathname === "/api/host/action" && req.method === "POST") {
