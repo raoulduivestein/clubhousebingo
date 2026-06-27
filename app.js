@@ -22,6 +22,7 @@
   const app = document.querySelector("#app");
   let state = null;
   let loading = false;
+  let lastAnnouncedDrawingId = null;
 
   async function api(path, options = {}) {
     const headers = {
@@ -40,14 +41,33 @@
 
   async function loadState() {
     if (loading) return;
+    const previousState = state;
     loading = true;
     try {
       state = await api("/api/state");
       render();
+      announceStateChanges(previousState, state);
     } catch (error) {
       app.innerHTML = `<section class="panel"><h2>Server niet bereikbaar</h2><p class="muted">${escapeHtml(error.message)}</p></section>`;
     } finally {
       loading = false;
+    }
+  }
+
+  function announceStateChanges(previousState, nextState) {
+    if (!previousState || !nextState) return;
+    const previousRound = previousState.rounds.find((round) => round.ronde_id === previousState.activeRoundId);
+    const nextRound = nextState.rounds.find((round) => round.ronde_id === nextState.activeRoundId);
+    if (!nextRound) return;
+    const previousDrawings = previousState.drawings.filter((drawing) => drawing.ronde_id === nextRound.ronde_id);
+    const nextDrawings = nextState.drawings.filter((drawing) => drawing.ronde_id === nextRound.ronde_id);
+    const latest = nextDrawings.sort((a, b) => a.volgorde - b.volgorde).at(-1);
+    if (latest && latest.trekking_id !== lastAnnouncedDrawingId && nextDrawings.length > previousDrawings.length) {
+      lastAnnouncedDrawingId = latest.trekking_id;
+      announce(`Nieuwe bal getrokken: ${latest.bal_letter} ${latest.bal_nummer}`);
+    }
+    if (previousRound && previousRound.status !== nextRound.status) {
+      announce(`Rondestatus gewijzigd naar ${STATUS_LABELS[nextRound.status] || nextRound.status}`);
     }
   }
 
@@ -71,11 +91,19 @@
 
   function toast(message) {
     const region = document.querySelector("#toast-region");
+    const liveRegion = document.querySelector("#live-region");
     const node = document.createElement("div");
     node.className = "toast";
+    node.setAttribute("role", "alert");
     node.textContent = message;
     region.append(node);
+    if (liveRegion) liveRegion.textContent = message;
     window.setTimeout(() => node.remove(), 3600);
+  }
+
+  function announce(message) {
+    const liveRegion = document.querySelector("#live-region");
+    if (liveRegion) liveRegion.textContent = message;
   }
 
   function activeRound() {
@@ -126,33 +154,36 @@
   }
 
   function renderStatus(round) {
-    return `<span class="pill">${STATUS_LABELS[round.status] || round.status}</span>`;
+    return `<span class="pill" role="status" aria-label="Rondestatus: ${escapeHtml(STATUS_LABELS[round.status] || round.status)}">${STATUS_LABELS[round.status] || round.status}</span>`;
   }
 
   function renderBalls(drawings) {
-    if (!drawings.length) return `<div class="empty">Nog geen ballen getrokken. De ballenmachine draait warm.</div>`;
-    return `<div class="ball-list">${drawings
-      .map((drawing) => `<span class="ball">${escapeHtml(drawing.volledige_bal)}</span>`)
-      .join("")}</div>`;
+    if (!drawings.length) return `<div class="empty" role="status">Nog geen ballen getrokken. De ballenmachine draait warm.</div>`;
+    return `<ol class="ball-list" aria-label="Getrokken ballen">${drawings
+      .map((drawing) => `<li class="ball" aria-label="Bal ${escapeHtml(drawing.bal_letter)} ${escapeHtml(drawing.bal_nummer)}">${escapeHtml(drawing.volledige_bal)}</li>`)
+      .join("")}</ol>`;
   }
 
   function renderCard(card, drawings) {
     const drawn = new Set(drawings.map((drawing) => drawing.bal_nummer));
     const rows = [
-      LETTERS.map((letter) => `<div class="bingo-cell header">${letter}</div>`).join(""),
+      LETTERS.map((letter) => `<div class="bingo-cell header" role="columnheader" aria-label="Kolom ${letter}">${letter}</div>`).join(""),
       card.nummers
         .map((row, rowIndex) =>
           row
             .map((value, columnIndex) => {
               const isFree = rowIndex === 2 && columnIndex === 2;
               const isHit = isFree || drawn.has(value);
-              return `<div class="bingo-cell ${isFree ? "free" : ""} ${isHit ? "hit" : ""}">${escapeHtml(value)}</div>`;
+              const label = isFree
+                ? "Vrij middenvak GEKKENHUIS, telt automatisch mee"
+                : `Rij ${rowIndex + 1}, kolom ${LETTERS[columnIndex]}, nummer ${value}, ${isHit ? "geraakt" : "niet geraakt"}`;
+              return `<div class="bingo-cell ${isFree ? "free" : ""} ${isHit ? "hit" : ""}" role="gridcell" aria-label="${escapeHtml(label)}" aria-selected="${isHit ? "true" : "false"}">${escapeHtml(value)}</div>`;
             })
             .join(""),
         )
         .join(""),
     ];
-    return `<div class="bingo-card" aria-label="Bingokaart">${rows.join("")}</div>`;
+    return `<div class="bingo-card" role="grid" aria-label="Bingokaart met automatisch gemarkeerde nummers">${rows.join("")}</div>`;
   }
 
   function renderHome() {
@@ -289,6 +320,7 @@
             <div class="stat"><strong>${last ? escapeHtml(last.volledige_bal) : "-"}</strong><span class="muted">Laatste bal</span></div>
           </div>
           <p><strong>Ronde:</strong> ${escapeHtml(cardRound.naam)}<br><strong>Status:</strong> ${escapeHtml(STATUS_LABELS[cardRound.status])}<br><strong>Bingo:</strong> ${escapeHtml(BINGO_TYPES[cardRound.bingo_type])}</p>
+          <p class="accessibility-note">De kaart markeert getrokken nummers automatisch. Screenreaders lezen per vakje voor of het nummer geraakt is.</p>
           <h3>We spelen voor</h3>
           ${renderPrize(prize, true)}
           <button class="button warning" id="claim-bingo" ${isOldRoundCard ? "disabled" : ""}>Bingo!</button>
@@ -531,7 +563,7 @@
   function renderPlayersTable(cards) {
     if (!cards.length) return `<div class="empty">Nog geen spelers. Pak je kaart voordat de chaos begint.</div>`;
     return `<div class="table-wrap"><table>
-      <thead><tr><th>Naam</th><th>Clubhouse</th><th>Kaart</th><th>Status</th><th>Link</th></tr></thead>
+      <thead><tr><th scope="col">Naam</th><th scope="col">Clubhouse</th><th scope="col">Kaart</th><th scope="col">Status</th><th scope="col">Link</th></tr></thead>
       <tbody>
         ${cards
           .map((card) => {
@@ -558,7 +590,7 @@
       <section class="live-screen">
         <p class="eyebrow">Nieuwe bal getrokken</p>
         <h1>Gekkenhuis Bingo</h1>
-        <div class="ball big">${last ? escapeHtml(last.volledige_bal) : "?"}</div>
+        <div class="ball big" role="status" aria-label="${last ? `Laatste bal: ${escapeHtml(last.bal_letter)} ${escapeHtml(last.bal_nummer)}` : "Nog geen bal getrokken"}">${last ? escapeHtml(last.volledige_bal) : "?"}</div>
         <p><strong>We spelen nu voor:</strong> ${escapeHtml(BINGO_TYPES[round.bingo_type])}</p>
         ${renderPrize(prize, true)}
         <p class="muted">${drawings.length} ballen getrokken</p>
@@ -609,7 +641,10 @@
     (routes[current.path] || renderHome)();
   }
 
-  window.addEventListener("hashchange", render);
+  window.addEventListener("hashchange", () => {
+    render();
+    app.focus();
+  });
   if ("EventSource" in window) {
     const events = new EventSource("/api/events");
     events.addEventListener("state-change", loadState);

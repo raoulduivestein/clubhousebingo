@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <a class="skip-link" href="#app">Direct naar inhoud</a>
     <div class="app-shell">
       <header class="topbar">
         <a class="brand" href="#/">
@@ -23,9 +24,10 @@
           <a href="#/trekking">Live scherm</a>
         </nav>
       </header>
-      <main id="app" aria-live="polite"></main>
+      <main id="app" tabindex="-1"></main>
     </div>
-    <div id="toast-region" class="toast-region" aria-live="assertive"></div>
+    <div id="live-region" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+    <div id="toast-region" class="toast-region" aria-live="assertive" aria-atomic="true"></div>
     <script src="app.js"></script>
   </body>
 </html>
