@@ -1,0 +1,485 @@
+(function () {
+  "use strict";
+
+  const LAST_CARD_KEY = "gekkenhuis-last-card-id";
+  const BINGO_TYPES = {
+    horizontal: "Een horizontale lijn",
+    vertical: "Een verticale lijn",
+    diagonal: "Een diagonale lijn",
+    corners: "Vier hoeken",
+    full: "Volle kaart",
+  };
+  const STATUS_LABELS = {
+    setup: "Voorbereiding",
+    registration: "Registratie open",
+    ready: "Registratie gesloten",
+    playing: "Spel bezig",
+    paused: "Gepauzeerd",
+    finished: "Afgerond",
+  };
+  const LETTERS = ["B", "I", "N", "G", "O"];
+
+  const app = document.querySelector("#app");
+  let state = null;
+  let loading = false;
+
+  async function api(path, options = {}) {
+    const headers = {
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    };
+    const response = await fetch(path, {
+      ...options,
+      headers,
+      cache: "no-store",
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "Serverfout.");
+    return payload;
+  }
+
+  async function loadState() {
+    if (loading) return;
+    loading = true;
+    try {
+      state = await api("/api/state");
+      render();
+    } catch (error) {
+      app.innerHTML = `<section class="panel"><h2>Server niet bereikbaar</h2><p class="muted">${escapeHtml(error.message)}</p></section>`;
+    } finally {
+      loading = false;
+    }
+  }
+
+  function route() {
+    const hash = window.location.hash || "#/";
+    const [path, queryString = ""] = hash.slice(1).split("?");
+    return {
+      path: path || "/",
+      params: new URLSearchParams(queryString),
+    };
+  }
+
+  function escapeHtml(value) {
+    return String(value || "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function toast(message) {
+    const region = document.querySelector("#toast-region");
+    const node = document.createElement("div");
+    node.className = "toast";
+    node.textContent = message;
+    region.append(node);
+    window.setTimeout(() => node.remove(), 3600);
+  }
+
+  function activeRound() {
+    return state.rounds.find((round) => round.ronde_id === state.activeRoundId) || state.rounds[0];
+  }
+
+  function drawingsFor(roundId) {
+    return state.drawings.filter((drawing) => drawing.ronde_id === roundId).sort((a, b) => a.volgorde - b.volgorde);
+  }
+
+  function claimsFor(roundId) {
+    return state.claims
+      .filter((claim) => claim.ronde_id === roundId)
+      .sort((a, b) => new Date(b.geclaimd_op) - new Date(a.geclaimd_op));
+  }
+
+  function cardById(cardId) {
+    return state.cards.find((card) => card.kaart_id === cardId);
+  }
+
+  function playerById(playerId) {
+    return state.players.find((player) => player.speler_id === playerId);
+  }
+
+  function cardLink(cardId) {
+    return `${location.origin}${location.pathname}${location.search}#/kaart?id=${encodeURIComponent(cardId)}`;
+  }
+
+  function renderStatus(round) {
+    return `<span class="pill">${STATUS_LABELS[round.status] || round.status}</span>`;
+  }
+
+  function renderBalls(drawings) {
+    if (!drawings.length) return `<div class="empty">Nog geen ballen getrokken. De ballenmachine draait warm.</div>`;
+    return `<div class="ball-list">${drawings
+      .map((drawing) => `<span class="ball">${escapeHtml(drawing.volledige_bal)}</span>`)
+      .join("")}</div>`;
+  }
+
+  function renderCard(card, drawings) {
+    const drawn = new Set(drawings.map((drawing) => drawing.bal_nummer));
+    const rows = [
+      LETTERS.map((letter) => `<div class="bingo-cell header">${letter}</div>`).join(""),
+      card.nummers
+        .map((row, rowIndex) =>
+          row
+            .map((value, columnIndex) => {
+              const isFree = rowIndex === 2 && columnIndex === 2;
+              const isHit = isFree || drawn.has(value);
+              return `<div class="bingo-cell ${isFree ? "free" : ""} ${isHit ? "hit" : ""}">${escapeHtml(value)}</div>`;
+            })
+            .join(""),
+        )
+        .join(""),
+    ];
+    return `<div class="bingo-card" aria-label="Bingokaart">${rows.join("")}</div>`;
+  }
+
+  function renderHome() {
+    const round = activeRound();
+    const drawings = drawingsFor(round.ronde_id);
+    app.innerHTML = `
+      <section class="hero">
+        <div class="hero-panel">
+          <p class="eyebrow">Welkom in het gekkenhuis</p>
+          <h1>Gekkenhuis Bingo</h1>
+          <p class="lede">Registreer je naam, pak je kaart en luister live mee in Clubhouse. Zodra de ballen rollen, begint het gekkenhuis.</p>
+          <div class="actions">
+            <a class="button" href="#/registratie">Ik doe mee</a>
+            <a class="button secondary" href="#/trekking">Open live scherm</a>
+          </div>
+        </div>
+        <aside class="panel status-stack">
+          <h2>${escapeHtml(round.naam)}</h2>
+          ${renderStatus(round)}
+          <div class="stat-grid">
+            <div class="stat"><strong>${state.cards.filter((card) => card.ronde_id === round.ronde_id).length}</strong><span class="muted">Kaarten</span></div>
+            <div class="stat"><strong>${drawings.length}</strong><span class="muted">Ballen</span></div>
+            <div class="stat"><strong>${claimsFor(round.ronde_id).filter((claim) => claim.status === "valid").length}</strong><span class="muted">Winnaars</span></div>
+          </div>
+          <p>${round.registratie_open ? "De registratie is geopend. Pak je kaart voordat de chaos begint." : "De registratie is gesloten. Luister scherp mee."}</p>
+          <p><strong>We spelen nu voor:</strong><br>${escapeHtml(BINGO_TYPES[round.bingo_type])}</p>
+        </aside>
+      </section>
+    `;
+  }
+
+  function renderRegistration() {
+    const round = activeRound();
+    app.innerHTML = `
+      <section class="grid two-col">
+        <div class="panel">
+          <p class="eyebrow">Registratie</p>
+          <h2>Pak je kaart voordat de chaos begint</h2>
+          <p class="muted">Ronde: ${escapeHtml(round.naam)}. ${round.registratie_open ? "De registratie is geopend." : "De registratie is nu gesloten."}</p>
+          <p class="muted">Per ronde kan er per IP-adres maar een kaart worden aangemaakt. Als dit IP al meedoet, opent de server de bestaande kaart.</p>
+        </div>
+        <form class="panel form" id="registration-form">
+          <div class="field">
+            <label for="name">Naam</label>
+            <input id="name" name="name" required maxlength="80" autocomplete="name" />
+          </div>
+          <div class="field">
+            <label for="clubhouse">Clubhouse-naam</label>
+            <input id="clubhouse" name="clubhouse" maxlength="80" placeholder="@clubhouse" />
+          </div>
+          <button class="button" type="submit" ${round.registratie_open ? "" : "disabled"}>Maak mijn bingokaart</button>
+        </form>
+      </section>
+    `;
+
+    document.querySelector("#registration-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      const naam = String(form.get("name") || "").trim();
+      const clubhouseNaam = String(form.get("clubhouse") || "").trim();
+      if (!naam) return;
+
+      try {
+        const result = await api("/api/register", {
+          method: "POST",
+          body: JSON.stringify({ naam, clubhouse_naam: clubhouseNaam }),
+        });
+        localStorage.setItem(LAST_CARD_KEY, result.card.kaart_id);
+        toast(result.existing ? "Dit IP-adres had al een kaart. We openen de bestaande kaart." : "Je kaart is klaar. Welkom in het gekkenhuis.");
+        await loadState();
+        window.location.hash = `#/kaart?id=${result.card.kaart_id}`;
+      } catch (error) {
+        toast(error.message);
+      }
+    });
+  }
+
+  function renderPlayerCard() {
+    const { params } = route();
+    const cardId = params.get("id") || localStorage.getItem(LAST_CARD_KEY);
+    const round = activeRound();
+    const card = cardId ? cardById(cardId) : null;
+
+    if (!card) {
+      app.innerHTML = `
+        <section class="panel">
+          <h2>Geen kaart gevonden</h2>
+          <p class="muted">Maak eerst een bingokaart of open je persoonlijke link.</p>
+          <div class="actions"><a class="button" href="#/registratie">Maak mijn kaart</a></div>
+        </section>
+      `;
+      return;
+    }
+
+    localStorage.setItem(LAST_CARD_KEY, card.kaart_id);
+    const player = playerById(card.speler_id);
+    const cardRound = state.rounds.find((item) => item.ronde_id === card.ronde_id) || round;
+    const drawings = drawingsFor(cardRound.ronde_id);
+    const last = drawings.at(-1);
+    const lastClaim = state.claims
+      .filter((claim) => claim.kaart_id === card.kaart_id)
+      .sort((a, b) => new Date(b.geclaimd_op) - new Date(a.geclaimd_op))[0];
+
+    app.innerHTML = `
+      <section class="grid two-col">
+        <div class="panel status-stack">
+          <p class="eyebrow">Mijn bingokaart</p>
+          <h2>${escapeHtml(player?.naam || "Speler")}</h2>
+          <p class="muted">${escapeHtml(player?.clubhouse_naam || "Geen Clubhouse-naam ingevuld")}</p>
+          <div class="stat-grid">
+            <div class="stat"><strong>${escapeHtml(card.kaartnummer)}</strong><span class="muted">Kaartnummer</span></div>
+            <div class="stat"><strong>${drawings.length}</strong><span class="muted">Ballen</span></div>
+            <div class="stat"><strong>${last ? escapeHtml(last.volledige_bal) : "-"}</strong><span class="muted">Laatste bal</span></div>
+          </div>
+          <p><strong>Ronde:</strong> ${escapeHtml(cardRound.naam)}<br><strong>Status:</strong> ${escapeHtml(STATUS_LABELS[cardRound.status])}<br><strong>Bingo:</strong> ${escapeHtml(BINGO_TYPES[cardRound.bingo_type])}</p>
+          <button class="button warning" id="claim-bingo">Bingo!</button>
+          ${lastClaim ? `<div class="claim ${lastClaim.status === "valid" ? "valid" : "invalid"}"><strong>${escapeHtml(lastClaim.status === "valid" ? "Geldige bingo" : "Bingo melding")}</strong><span>${escapeHtml(lastClaim.message)}</span></div>` : ""}
+          <div class="field">
+            <label for="personal-link">Persoonlijke link</label>
+            <input id="personal-link" readonly value="${escapeHtml(cardLink(card.kaart_id))}" />
+          </div>
+        </div>
+        <div class="panel status-stack">
+          ${renderCard(card, drawings)}
+          <h3>Getrokken ballen</h3>
+          ${renderBalls(drawings)}
+        </div>
+      </section>
+    `;
+
+    document.querySelector("#claim-bingo").addEventListener("click", async () => {
+      try {
+        const result = await api("/api/claim", {
+          method: "POST",
+          body: JSON.stringify({ kaart_id: card.kaart_id }),
+        });
+        toast(result.result.message);
+        await loadState();
+      } catch (error) {
+        toast(error.message);
+      }
+    });
+  }
+
+  function renderHost() {
+    const round = activeRound();
+    const cards = state.cards.filter((card) => card.ronde_id === round.ronde_id);
+    const drawings = drawingsFor(round.ronde_id);
+    const claims = claimsFor(round.ronde_id);
+    const last = drawings.at(-1);
+    app.innerHTML = `
+      <section class="grid host-grid">
+        <aside class="panel form">
+          <p class="eyebrow">Host dashboard</p>
+          <h2>${escapeHtml(round.naam)}</h2>
+          ${renderStatus(round)}
+          <div class="field">
+            <label for="round-name">Naam ronde</label>
+            <input id="round-name" value="${escapeHtml(round.naam)}" />
+          </div>
+          <div class="field">
+            <label for="bingo-type">Geldige bingo</label>
+            <select id="bingo-type">
+              ${Object.entries(BINGO_TYPES)
+                .map(([value, label]) => `<option value="${value}" ${round.bingo_type === value ? "selected" : ""}>${label}</option>`)
+                .join("")}
+            </select>
+          </div>
+          <div class="actions">
+            <button class="button secondary" id="save-round">Opslaan</button>
+            <button class="button secondary" id="toggle-registration">${round.registratie_open ? "Sluit registratie" : "Open registratie"}</button>
+            <button class="button good" id="start-game">Start spel</button>
+            <button class="button" id="draw-ball" ${round.status === "playing" ? "" : "disabled"}>Trek bal</button>
+            <button class="button secondary" id="pause-game">${round.status === "paused" ? "Hervat spel" : "Pauzeer spel"}</button>
+            <button class="button warning" id="finish-round">Sluit ronde</button>
+            <button class="button secondary" id="new-round">Nieuwe ronde</button>
+          </div>
+        </aside>
+        <div class="grid">
+          <div class="panel">
+            <div class="stat-grid">
+              <div class="stat"><strong>${cards.length}</strong><span class="muted">Geregistreerde spelers</span></div>
+              <div class="stat"><strong>${drawings.length}</strong><span class="muted">Getrokken ballen</span></div>
+              <div class="stat"><strong>${last ? escapeHtml(last.volledige_bal) : "-"}</strong><span class="muted">Laatste bal</span></div>
+            </div>
+          </div>
+          <div class="panel">
+            <h3>Getrokken ballen</h3>
+            ${renderBalls(drawings)}
+          </div>
+          <div class="panel">
+            <h3>Bingo meldingen</h3>
+            ${renderClaims(claims)}
+          </div>
+          <div class="panel">
+            <h3>Spelers en kaartnummers</h3>
+            ${renderPlayersTable(cards)}
+          </div>
+        </div>
+      </section>
+    `;
+
+    document.querySelector("#save-round").addEventListener("click", async () => {
+      await hostPost("/api/host/round", {
+        naam: document.querySelector("#round-name").value.trim(),
+        bingo_type: document.querySelector("#bingo-type").value,
+      });
+      toast("Ronde opgeslagen.");
+    });
+    document.querySelector("#toggle-registration").addEventListener("click", () => hostAction("toggle-registration"));
+    document.querySelector("#start-game").addEventListener("click", () => hostAction("start", "De ballenmachine draait."));
+    document.querySelector("#draw-ball").addEventListener("click", async () => {
+      await hostPost("/api/host/draw", {});
+      toast("Nieuwe bal getrokken.");
+    });
+    document.querySelector("#pause-game").addEventListener("click", () => hostAction("pause"));
+    document.querySelector("#finish-round").addEventListener("click", () => hostAction("finish", "De ronde is gesloten."));
+    document.querySelector("#new-round").addEventListener("click", () => hostAction("new", "Nieuwe ronde gestart. De registratie is geopend."));
+  }
+
+  async function hostPost(path, body) {
+    try {
+      const hostPin = localStorage.getItem("gekkenhuis-host-pin") || "";
+      await api(path, {
+        method: "POST",
+        headers: hostPin ? { "X-Host-Pin": hostPin } : {},
+        body: JSON.stringify(body),
+      });
+      await loadState();
+    } catch (error) {
+      if (error.message.includes("PIN")) {
+        const pin = window.prompt("Host PIN");
+        if (pin) {
+          localStorage.setItem("gekkenhuis-host-pin", pin);
+          return hostPost(path, body);
+        }
+      }
+      toast(error.message);
+    }
+  }
+
+  async function hostAction(action, message) {
+    await hostPost("/api/host/action", { action });
+    if (message) toast(message);
+  }
+
+  function renderClaims(claims) {
+    if (!claims.length) return `<div class="empty">Nog geen bingo geroepen.</div>`;
+    return `<div class="grid">${claims
+      .map((claim) => {
+        const player = playerById(claim.speler_id);
+        const card = cardById(claim.kaart_id);
+        return `<div class="claim ${claim.status === "valid" ? "valid" : "invalid"}">
+          <strong>${escapeHtml(player?.naam || "Onbekend")} - kaart ${escapeHtml(card?.kaartnummer || "-")}</strong>
+          <span>${escapeHtml(claim.message)}</span>
+          <span class="muted">${escapeHtml(BINGO_TYPES[claim.bingo_type] || claim.bingo_type)}</span>
+          ${claim.status === "valid" ? `<a class="button good" href="#/winnaar?claim=${claim.claim_id}">Winnaarsscherm</a>` : ""}
+        </div>`;
+      })
+      .join("")}</div>`;
+  }
+
+  function renderPlayersTable(cards) {
+    if (!cards.length) return `<div class="empty">Nog geen spelers. Pak je kaart voordat de chaos begint.</div>`;
+    return `<div class="table-wrap"><table>
+      <thead><tr><th>Naam</th><th>Clubhouse</th><th>Kaart</th><th>Status</th><th>Link</th></tr></thead>
+      <tbody>
+        ${cards
+          .map((card) => {
+            const player = playerById(card.speler_id);
+            return `<tr>
+              <td>${escapeHtml(player?.naam || "")}</td>
+              <td>${escapeHtml(player?.clubhouse_naam || "")}</td>
+              <td>${escapeHtml(card.kaartnummer)}</td>
+              <td>${escapeHtml(card.status)}</td>
+              <td><a href="#/kaart?id=${card.kaart_id}">Open kaart</a></td>
+            </tr>`;
+          })
+          .join("")}
+      </tbody>
+    </table></div>`;
+  }
+
+  function renderLiveScreen() {
+    const round = activeRound();
+    const drawings = drawingsFor(round.ronde_id);
+    const last = drawings.at(-1);
+    app.innerHTML = `
+      <section class="live-screen">
+        <p class="eyebrow">Nieuwe bal getrokken</p>
+        <h1>Gekkenhuis Bingo</h1>
+        <div class="ball big">${last ? escapeHtml(last.volledige_bal) : "?"}</div>
+        <p><strong>We spelen nu voor:</strong> ${escapeHtml(BINGO_TYPES[round.bingo_type])}</p>
+        <p class="muted">${drawings.length} ballen getrokken</p>
+        ${renderBalls(drawings)}
+      </section>
+    `;
+  }
+
+  function renderWinner() {
+    const { params } = route();
+    const claim = state.claims.find((item) => item.claim_id === params.get("claim")) || state.claims.find((item) => item.status === "valid");
+    if (!claim) {
+      app.innerHTML = `<section class="panel"><h2>Nog geen winnaar</h2><p class="muted">Bingo geroepen! Even kijken of dit geen drama is.</p></section>`;
+      return;
+    }
+    const player = playerById(claim.speler_id);
+    const card = cardById(claim.kaart_id);
+    const round = state.rounds.find((item) => item.ronde_id === claim.ronde_id);
+    app.innerHTML = `
+      <section class="winner">
+        <div>
+          <p class="eyebrow">BINGO! Het gekkenhuis ontploft.</p>
+          <h1>${escapeHtml(player?.naam || "Winnaar")}</h1>
+          <p class="lede">Winnaar: ${escapeHtml(player?.naam || "")}<br>${escapeHtml(player?.clubhouse_naam || "")}</p>
+          <p><strong>Kaartnummer:</strong> ${escapeHtml(card?.kaartnummer || "-")}<br><strong>Bingo-type:</strong> ${escapeHtml(BINGO_TYPES[claim.bingo_type])}<br><strong>Ronde:</strong> ${escapeHtml(round?.naam || "")}</p>
+          <div class="actions"><a class="button" href="#/trekking">Terug naar live scherm</a></div>
+        </div>
+      </section>
+    `;
+  }
+
+  function render() {
+    if (!state) {
+      app.innerHTML = `<section class="panel"><h2>De ballenmachine draait warm</h2><p class="muted">Even laden...</p></section>`;
+      return;
+    }
+    const current = route();
+    const routes = {
+      "/": renderHome,
+      "/registratie": renderRegistration,
+      "/kaart": renderPlayerCard,
+      "/host": renderHost,
+      "/trekking": renderLiveScreen,
+      "/winnaar": renderWinner,
+    };
+    (routes[current.path] || renderHome)();
+  }
+
+  window.addEventListener("hashchange", render);
+  if ("EventSource" in window) {
+    const events = new EventSource("/api/events");
+    events.addEventListener("state-change", loadState);
+    events.onerror = () => window.setTimeout(loadState, 2000);
+  } else {
+    window.setInterval(loadState, 3000);
+  }
+
+  render();
+  loadState();
+})();

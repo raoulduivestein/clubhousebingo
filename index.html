@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="nl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gekkenhuis Bingo</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#/">
+          <span class="brand-mark">GB</span>
+          <span>
+            <strong>Gekkenhuis Bingo</strong>
+            <small>Live Clubhouse bingo</small>
+          </span>
+        </a>
+        <nav class="topnav" aria-label="Hoofdnavigatie">
+          <a href="#/">Start</a>
+          <a href="#/kaart">Mijn kaart</a>
+          <a href="#/host">Host</a>
+          <a href="#/trekking">Live scherm</a>
+        </nav>
+      </header>
+      <main id="app" aria-live="polite"></main>
+    </div>
+    <div id="toast-region" class="toast-region" aria-live="assertive"></div>
+    <script src="app.js"></script>
+  </body>
+</html>

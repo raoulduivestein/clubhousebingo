@@ -1,0 +1,12 @@
+{
+  "name": "gekkenhuis-bingo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Digitale bingo tool voor live Clubhouse-rondes.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
