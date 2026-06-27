@@ -70,6 +70,9 @@ In het hostdashboard kun je prijzen toevoegen met:
 - soort, bijvoorbeeld voucher of cadeaubon
 - bedrag
 - logo URL
+- prijs code, bijvoorbeeld een voucher- of cadeauboncode
 - omschrijving
 
 Daarna kun je per ronde kiezen waarvoor gespeeld wordt. Bij een geldige bingo kan de host de prijs via de bingo-melding aan de winnaar toekennen.
+
+Prijscodes worden niet meegestuurd in de algemene speldata. De code wordt pas opgehaald op de persoonlijke kaart van de winnaar nadat de host de prijs heeft toegekend.

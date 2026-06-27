@@ -76,7 +76,18 @@ function migrateState(state) {
   }
   for (const prize of state.prizes) {
     if (!Object.prototype.hasOwnProperty.call(prize, "status")) prize.status = prize.toegekend_aan_claim_id ? "awarded" : "available";
+    if (!Object.prototype.hasOwnProperty.call(prize, "code")) prize.code = "";
   }
+}
+
+function publicState(state) {
+  return {
+    ...state,
+    prizes: state.prizes.map((prize) => {
+      const { code, ...publicPrize } = prize;
+      return publicPrize;
+    }),
+  };
 }
 
 function writeState(state) {
@@ -376,6 +387,7 @@ function createPrize(body) {
   const bedrag = String(body.bedrag || "").trim().slice(0, 40);
   const logoUrl = String(body.logo_url || "").trim().slice(0, 500);
   const omschrijving = String(body.omschrijving || "").trim().slice(0, 500);
+  const code = String(body.code || "").trim().slice(0, 200);
   if (!naam) {
     const err = new Error("Prijsnaam is verplicht.");
     err.statusCode = 400;
@@ -390,6 +402,7 @@ function createPrize(body) {
       bedrag,
       logo_url: logoUrl,
       omschrijving,
+      code,
       status: "available",
       toegekend_aan_claim_id: null,
       toegekend_op: null,
@@ -398,6 +411,31 @@ function createPrize(body) {
     state.prizes.push(prize);
     return { prize };
   });
+}
+
+function getPrizeCode(req) {
+  const searchParams = new URL(req.url, "http://localhost").searchParams;
+  const claimId = String(searchParams.get("claim_id") || "");
+  const cardId = String(searchParams.get("kaart_id") || "");
+  const state = readState();
+  const claim = state.claims.find((item) => item.claim_id === claimId);
+  if (!claim || claim.status !== "valid" || claim.kaart_id !== cardId || !claim.prijs_id) {
+    const err = new Error("Geen prijscode beschikbaar voor deze kaart.");
+    err.statusCode = 404;
+    throw err;
+  }
+  const prize = prizeById(state, claim.prijs_id);
+  if (!prize || prize.toegekend_aan_claim_id !== claim.claim_id) {
+    const err = new Error("Deze prijs is nog niet aan deze winnaar toegekend.");
+    err.statusCode = 404;
+    throw err;
+  }
+  return {
+    prijs_id: prize.prijs_id,
+    naam: prize.naam,
+    bedrag: prize.bedrag,
+    code: prize.code || "",
+  };
 }
 
 function awardPrize(body) {
@@ -562,7 +600,11 @@ function serveStatic(req, res, pathname) {
 
 async function handleApi(req, res, pathname) {
   if (pathname === "/api/state" && req.method === "GET") {
-    sendJson(res, 200, readState());
+    sendJson(res, 200, publicState(readState()));
+    return;
+  }
+  if (pathname === "/api/prize-code" && req.method === "GET") {
+    sendJson(res, 200, getPrizeCode(req));
     return;
   }
   if (pathname === "/api/events" && req.method === "GET") {

@@ -303,6 +303,10 @@
     const lastClaim = state.claims
       .filter((claim) => claim.kaart_id === card.kaart_id)
       .sort((a, b) => new Date(b.geclaimd_op) - new Date(a.geclaimd_op))[0];
+    const awardedClaim = state.claims
+      .filter((claim) => claim.kaart_id === card.kaart_id && claim.status === "valid" && claim.prijs_id)
+      .sort((a, b) => new Date(b.gecontroleerd_op) - new Date(a.gecontroleerd_op))[0];
+    const awardedPrize = awardedClaim ? prizeById(awardedClaim.prijs_id) : null;
 
     app.innerHTML = `
       <section class="grid two-col">
@@ -326,6 +330,11 @@
           ${renderPrize(prize, true)}
           <button class="button warning" id="claim-bingo" ${isOldRoundCard ? "disabled" : ""}>Bingo!</button>
           ${lastClaim ? `<div class="claim ${lastClaim.status === "valid" ? "valid" : "invalid"}"><strong>${escapeHtml(lastClaim.status === "valid" ? "Geldige bingo" : "Bingo melding")}</strong><span>${escapeHtml(lastClaim.message)}</span></div>` : ""}
+          ${
+            awardedPrize
+              ? `<div class="claim valid" id="prize-code-panel"><strong>Je prijs is toegekend: ${escapeHtml(awardedPrize.naam)}</strong><span class="muted">De prijscode wordt opgehaald...</span></div>`
+              : ""
+          }
           <div class="field">
             <label for="personal-link">Persoonlijke link</label>
             <input id="personal-link" readonly value="${escapeHtml(cardLink(card.kaart_id))}" />
@@ -351,6 +360,24 @@
         toast(error.message);
       }
     });
+    if (awardedClaim) loadPrizeCode(card.kaart_id, awardedClaim.claim_id);
+  }
+
+  async function loadPrizeCode(cardId, claimId) {
+    const panel = document.querySelector("#prize-code-panel");
+    if (!panel) return;
+    try {
+      const result = await api(`/api/prize-code?kaart_id=${encodeURIComponent(cardId)}&claim_id=${encodeURIComponent(claimId)}`);
+      panel.innerHTML = `<strong>Je prijs is toegekend: ${escapeHtml(result.naam)}</strong>
+        ${result.bedrag ? `<span>${escapeHtml(result.bedrag)}</span>` : ""}
+        <label class="field">
+          <span>Jouw prijscode</span>
+          <input readonly value="${escapeHtml(result.code || "Geen code ingevuld")}" aria-label="Jouw prijscode" />
+        </label>`;
+      announce("Je prijscode is beschikbaar.");
+    } catch (error) {
+      panel.innerHTML = `<strong>Je prijs is toegekend.</strong><span>${escapeHtml(error.message)}</span>`;
+    }
   }
 
   function renderHost() {
@@ -469,6 +496,7 @@
         soort: form.get("soort"),
         bedrag: form.get("bedrag"),
         logo_url: form.get("logo_url"),
+        code: form.get("code"),
         omschrijving: form.get("omschrijving"),
       });
       toast("Prijs toegevoegd.");
@@ -604,6 +632,10 @@
       <div class="field">
         <label for="prize-logo">Logo URL</label>
         <input id="prize-logo" name="logo_url" maxlength="500" placeholder="https://..." />
+      </div>
+      <div class="field">
+        <label for="prize-code">Prijs code</label>
+        <input id="prize-code" name="code" maxlength="200" placeholder="Bijvoorbeeld ABCD-1234-EFGH" />
       </div>
       <div class="field">
         <label for="prize-description">Omschrijving</label>
