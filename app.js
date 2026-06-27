@@ -165,26 +165,71 @@
       .join("")}</ol>`;
   }
 
+  function renderDrawnBallsText(drawings) {
+    const latest = drawings.at(-1);
+    const allBalls = drawings.map((drawing) => `${drawing.bal_letter} ${drawing.bal_nummer}`).join(", ");
+    return `<section class="sr-only" aria-live="polite" aria-atomic="true">
+      <h3>Getrokken ballen als tekst</h3>
+      <p>${latest ? `Laatste bal: ${escapeHtml(latest.bal_letter)} ${escapeHtml(latest.bal_nummer)}.` : "Nog geen ballen getrokken."}</p>
+      <p>${drawings.length ? `Alle getrokken ballen: ${escapeHtml(allBalls)}.` : "De lijst met getrokken ballen is nog leeg."}</p>
+    </section>`;
+  }
+
+  function renderAssistiveCardStatus(card, round, drawings, lastClaim) {
+    const latest = drawings.at(-1);
+    return `<section class="sr-only" aria-live="polite" aria-atomic="true">
+      <h3>Spelstatus voor je bingokaart</h3>
+      <p>Kaart ${escapeHtml(card.kaartnummer)}. Ronde: ${escapeHtml(round.naam)}. Status: ${escapeHtml(STATUS_LABELS[round.status] || round.status)}. Bingo-opdracht: ${escapeHtml(BINGO_TYPES[round.bingo_type] || round.bingo_type)}.</p>
+      <p>${drawings.length} ballen getrokken.${latest ? ` Laatste bal: ${escapeHtml(latest.bal_letter)} ${escapeHtml(latest.bal_nummer)}.` : ""}</p>
+      ${lastClaim ? `<p>Laatste bingo-melding: ${escapeHtml(lastClaim.message)}</p>` : ""}
+    </section>`;
+  }
+
+  function cardCellLabel(value, rowIndex, columnIndex, drawn) {
+    const isFree = rowIndex === 2 && columnIndex === 2;
+    if (isFree) return "vrij vak, telt automatisch mee";
+    return `nummer ${value}, ${drawn.has(value) ? "geraakt" : "niet geraakt"}`;
+  }
+
+  function renderCardTranscript(card, drawings) {
+    const drawn = new Set(drawings.map((drawing) => drawing.bal_nummer));
+    return `<section class="sr-only" aria-labelledby="card-transcript-title">
+      <h3 id="card-transcript-title">Tekstversie van je bingokaart</h3>
+      <table>
+        <caption>Bingokaart ${escapeHtml(card.kaartnummer)} met status per vakje</caption>
+        <thead><tr>${LETTERS.map((letter) => `<th scope="col">${letter}</th>`).join("")}</tr></thead>
+        <tbody>
+          ${card.nummers
+            .map(
+              (row, rowIndex) =>
+                `<tr>${row
+                  .map((value, columnIndex) => `<td>${escapeHtml(LETTERS[columnIndex])} rij ${rowIndex + 1}: ${escapeHtml(cardCellLabel(value, rowIndex, columnIndex, drawn))}</td>`)
+                  .join("")}</tr>`,
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </section>`;
+  }
+
   function renderCard(card, drawings) {
     const drawn = new Set(drawings.map((drawing) => drawing.bal_nummer));
     const rows = [
-      LETTERS.map((letter) => `<div class="bingo-cell header" role="columnheader" aria-label="Kolom ${letter}">${letter}</div>`).join(""),
+      `<div class="bingo-row" role="row">${LETTERS.map((letter, index) => `<div class="bingo-cell header" role="columnheader" aria-colindex="${index + 1}" aria-label="Kolom ${letter}">${letter}</div>`).join("")}</div>`,
       card.nummers
         .map((row, rowIndex) =>
-          row
+          `<div class="bingo-row" role="row" aria-rowindex="${rowIndex + 2}">${row
             .map((value, columnIndex) => {
               const isFree = rowIndex === 2 && columnIndex === 2;
               const isHit = isFree || drawn.has(value);
-              const label = isFree
-                ? "Vrij middenvak GEKKENHUIS, telt automatisch mee"
-                : `Rij ${rowIndex + 1}, kolom ${LETTERS[columnIndex]}, nummer ${value}, ${isHit ? "geraakt" : "niet geraakt"}`;
-              return `<div class="bingo-cell ${isFree ? "free" : ""} ${isHit ? "hit" : ""}" role="gridcell" aria-label="${escapeHtml(label)}" aria-selected="${isHit ? "true" : "false"}">${escapeHtml(value)}</div>`;
+              const label = `Rij ${rowIndex + 1}, kolom ${LETTERS[columnIndex]}, ${cardCellLabel(value, rowIndex, columnIndex, drawn)}`;
+              return `<div class="bingo-cell ${isFree ? "free" : ""} ${isHit ? "hit" : ""}" role="gridcell" aria-rowindex="${rowIndex + 2}" aria-colindex="${columnIndex + 1}" aria-label="${escapeHtml(label)}" aria-selected="${isHit ? "true" : "false"}">${escapeHtml(value)}</div>`;
             })
-            .join(""),
+            .join("")}</div>`,
         )
         .join(""),
     ];
-    return `<div class="bingo-card" role="grid" aria-label="Bingokaart met automatisch gemarkeerde nummers">${rows.join("")}</div>`;
+    return `${renderCardTranscript(card, drawings)}<div class="bingo-card" role="grid" aria-rowcount="6" aria-colcount="5" aria-label="Bingokaart ${escapeHtml(card.kaartnummer)} met automatisch gemarkeerde nummers">${rows.join("")}</div>`;
   }
 
   function renderHome() {
@@ -310,6 +355,7 @@
 
     app.innerHTML = `
       <section class="grid two-col">
+        ${renderAssistiveCardStatus(card, cardRound, drawings, lastClaim)}
         <div class="panel status-stack">
           ${
             isOldRoundCard
@@ -328,7 +374,8 @@
           <p class="accessibility-note">De kaart markeert getrokken nummers automatisch. Screenreaders lezen per vakje voor of het nummer geraakt is.</p>
           <h3>We spelen voor</h3>
           ${renderPrize(prize, true)}
-          <button class="button warning" id="claim-bingo" ${isOldRoundCard ? "disabled" : ""}>Bingo!</button>
+          <span class="sr-only" id="claim-help">Activeer deze knop alleen als je denkt dat je bingo hebt volgens de opdracht van deze ronde.</span>
+          <button class="button warning" id="claim-bingo" aria-describedby="claim-help" ${isOldRoundCard ? "disabled" : ""}>Bingo!</button>
           ${lastClaim ? `<div class="claim ${lastClaim.status === "valid" ? "valid" : "invalid"}"><strong>${escapeHtml(lastClaim.status === "valid" ? "Geldige bingo" : "Bingo melding")}</strong><span>${escapeHtml(lastClaim.message)}</span></div>` : ""}
           ${
             awardedPrize
@@ -343,6 +390,7 @@
         <div class="panel status-stack">
           ${renderCard(card, drawings)}
           <h3>Getrokken ballen</h3>
+          ${renderDrawnBallsText(drawings)}
           ${renderBalls(drawings)}
         </div>
       </section>
@@ -666,6 +714,7 @@
         const player = playerById(claim.speler_id);
         const card = cardById(claim.kaart_id);
         const awardedPrize = claim.prijs_id ? prizeById(claim.prijs_id) : null;
+        const claimLabel = `${player?.naam || "Onbekend"} kaart ${card?.kaartnummer || "-"}`;
         return `<div class="claim ${claim.status === "valid" ? "valid" : "invalid"}">
           <strong>${escapeHtml(player?.naam || "Onbekend")} - kaart ${escapeHtml(card?.kaartnummer || "-")}</strong>
           <span>${escapeHtml(claim.message)}</span>
@@ -674,8 +723,8 @@
           ${
             claim.status === "valid"
               ? `<div class="actions">
-                  <a class="button good" href="#/winnaar?claim=${claim.claim_id}">Winnaarsscherm</a>
-                  ${prize && prize.status !== "awarded" ? `<button class="button secondary" data-award-prize data-claim-id="${claim.claim_id}" data-prize-id="${prize.prijs_id}">Ken prijs toe</button>` : ""}
+                  <a class="button good" href="#/winnaar?claim=${claim.claim_id}" aria-label="Open winnaarsscherm voor ${escapeHtml(claimLabel)}">Winnaarsscherm</a>
+                  ${prize && prize.status !== "awarded" ? `<button class="button secondary" data-award-prize data-claim-id="${claim.claim_id}" data-prize-id="${prize.prijs_id}" aria-label="Ken prijs ${escapeHtml(prize.naam)} toe aan ${escapeHtml(claimLabel)}">Ken prijs toe</button>` : ""}
                 </div>`
               : ""
           }
@@ -756,7 +805,7 @@
           </div>
           <div class="actions">
             <button class="button secondary" type="submit">Bewaar prijs</button>
-            <button class="button warning" type="button" data-delete-prize data-prize-id="${prizeId}" ${isAwarded ? "disabled" : ""}>Verwijder</button>
+            <button class="button warning" type="button" data-delete-prize data-prize-id="${prizeId}" aria-label="Verwijder prijs ${escapeHtml(prize.naam)}" ${isAwarded ? "disabled" : ""}>Verwijder</button>
           </div>
           ${isAwarded ? `<p class="muted">Toegekende prijzen kunnen niet worden verwijderd.</p>` : ""}
         </form>`;
@@ -781,7 +830,7 @@
               <td>${state.cards.filter((card) => card.ronde_id === round.ronde_id).length}</td>
               <td>${drawingsFor(round.ronde_id).length}</td>
               <td>${claimsFor(round.ronde_id).length}</td>
-              <td><button class="button warning" type="button" data-delete-round data-round-id="${roundId}" ${isActive ? "disabled" : ""}>Verwijder</button></td>
+              <td><button class="button warning" type="button" data-delete-round data-round-id="${roundId}" aria-label="Verwijder ronde ${escapeHtml(round.naam)}" ${isActive ? "disabled" : ""}>Verwijder</button></td>
             </tr>`;
           })
           .join("")}
@@ -798,6 +847,7 @@
           .map((card) => {
             const player = playerById(card.speler_id);
             const cardId = escapeHtml(card.kaart_id);
+            const playerLabel = `${player?.naam || "Onbekende speler"} kaart ${card.kaartnummer}`;
             return `<tr>
               <td>${escapeHtml(player?.naam || "")}</td>
               <td>${escapeHtml(player?.clubhouse_naam || "")}</td>
@@ -806,8 +856,8 @@
               <td><a href="#/kaart?id=${cardId}">Open kaart</a></td>
               <td>
                 <div class="actions">
-                  <button class="button warning" type="button" data-delete-card data-card-id="${cardId}">Verwijder</button>
-                  <button class="button secondary" type="button" data-block-card data-card-id="${cardId}">Blokkeer toegang</button>
+                  <button class="button warning" type="button" data-delete-card data-card-id="${cardId}" aria-label="Verwijder ${escapeHtml(playerLabel)}">Verwijder</button>
+                  <button class="button secondary" type="button" data-block-card data-card-id="${cardId}" aria-label="Blokkeer toegang voor ${escapeHtml(playerLabel)}">Blokkeer toegang</button>
                 </div>
               </td>
             </tr>`;
@@ -829,7 +879,7 @@
             return `<tr>
               <td>${escapeHtml(block.label || "Onbekende speler")}</td>
               <td>${escapeHtml(created)}</td>
-              <td><button class="button secondary" type="button" data-unblock-connection data-block-id="${blockId}">Deblokkeer</button></td>
+              <td><button class="button secondary" type="button" data-unblock-connection data-block-id="${blockId}" aria-label="Deblokkeer ${escapeHtml(block.label || "onbekende speler")}">Deblokkeer</button></td>
             </tr>`;
           })
           .join("")}
@@ -850,6 +900,7 @@
         <p><strong>We spelen nu voor:</strong> ${escapeHtml(BINGO_TYPES[round.bingo_type])}</p>
         ${renderPrize(prize, true)}
         <p class="muted">${drawings.length} ballen getrokken</p>
+        ${renderDrawnBallsText(drawings)}
         ${renderBalls(drawings)}
       </section>
     `;

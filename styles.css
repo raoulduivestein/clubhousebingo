@@ -352,6 +352,10 @@ p {
   gap: 2px;
 }
 
+.bingo-row {
+  display: contents;
+}
+
 .bingo-cell {
   display: grid;
   min-height: clamp(3.25rem, 11vw, 5.3rem);
@@ -373,6 +377,12 @@ p {
 .bingo-cell.hit {
   background: var(--yellow);
   box-shadow: inset 0 0 0 4px var(--ink);
+}
+
+.bingo-cell.hit::after {
+  content: "✓";
+  margin-left: 0.25rem;
+  font-size: 0.75em;
 }
 
 .bingo-cell.free {
@@ -570,5 +580,27 @@ th {
 
   .hero-panel {
     min-height: 24rem;
+  }
+}
+
+@media (forced-colors: active) {
+  .button,
+  .ball,
+  .bingo-card,
+  .bingo-cell,
+  .panel,
+  .claim,
+  .prize,
+  .stat {
+    border-color: CanvasText;
+    box-shadow: none;
+  }
+
+  .bingo-cell.hit,
+  .bingo-cell.free,
+  .bingo-cell.header {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
   }
 }
