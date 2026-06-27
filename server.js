@@ -58,6 +58,7 @@ function seedState() {
     drawings: [],
     claims: [],
     prizes: [],
+    blocked_connections: [],
     cardCounter: 1000,
   };
 }
@@ -71,6 +72,7 @@ function readState() {
 
 function migrateState(state) {
   if (!Array.isArray(state.prizes)) state.prizes = [];
+  if (!Array.isArray(state.blocked_connections)) state.blocked_connections = [];
   for (const round of state.rounds || []) {
     if (!Object.prototype.hasOwnProperty.call(round, "prijs_id")) round.prijs_id = null;
   }
@@ -83,6 +85,15 @@ function migrateState(state) {
 function publicState(state) {
   return {
     ...state,
+    cards: state.cards.map((card) => {
+      const { ip_hash: ipHash, ...publicCard } = card;
+      return publicCard;
+    }),
+    blocked_connections: state.blocked_connections.map((block) => ({
+      block_id: block.block_id,
+      label: block.label,
+      aangemaakt_op: block.aangemaakt_op,
+    })),
     prizes: state.prizes.map((prize) => {
       const { code, ...publicPrize } = prize;
       return publicPrize;
@@ -324,6 +335,12 @@ function registerPlayer(req, body) {
   const ip = getClientIp(req);
   const ipHash = hashIp(ip);
   return mutateState((state) => {
+    if (state.blocked_connections.some((block) => block.ip_hash === ipHash)) {
+      const err = new Error("Je kunt je niet registreren voor deze bingo.");
+      err.statusCode = 403;
+      throw err;
+    }
+
     const round = activeRound(state);
     if (!round.registratie_open || round.status !== "registration") {
       const err = new Error("De registratie is gesloten.");
@@ -517,6 +534,50 @@ function deleteCard(body) {
     if (!state.cards.some((item) => item.speler_id === card.speler_id)) {
       state.players = state.players.filter((player) => player.speler_id !== card.speler_id);
     }
+    return { deleted: true };
+  });
+}
+
+function blockCardConnection(body) {
+  const cardId = String(body.kaart_id || "");
+  return mutateState((state) => {
+    const card = cardById(state, cardId);
+    if (!card) {
+      const err = new Error("Deze speler of kaart bestaat niet.");
+      err.statusCode = 404;
+      throw err;
+    }
+    if (!card.ip_hash) {
+      const err = new Error("Deze speler kan niet worden geblokkeerd.");
+      err.statusCode = 400;
+      throw err;
+    }
+    const player = playerById(state, card.speler_id);
+    const existing = state.blocked_connections.find((block) => block.ip_hash === card.ip_hash);
+    if (existing) return { block: existing, existing: true };
+    const block = {
+      block_id: uid("block"),
+      ip_hash: card.ip_hash,
+      label: `${player?.naam || "Speler"} - kaart ${card.kaartnummer}`,
+      kaart_id: card.kaart_id,
+      speler_id: card.speler_id,
+      aangemaakt_op: nowIso(),
+    };
+    state.blocked_connections.push(block);
+    return { block, existing: false };
+  });
+}
+
+function unblockConnection(body) {
+  const blockId = String(body.block_id || "");
+  return mutateState((state) => {
+    const exists = state.blocked_connections.some((block) => block.block_id === blockId);
+    if (!exists) {
+      const err = new Error("Deze blokkade bestaat niet.");
+      err.statusCode = 404;
+      throw err;
+    }
+    state.blocked_connections = state.blocked_connections.filter((block) => block.block_id !== blockId);
     return { deleted: true };
   });
 }
@@ -759,6 +820,14 @@ async function handleApi(req, res, pathname) {
   }
   if (pathname === "/api/host/delete-card" && req.method === "POST") {
     sendJson(res, 200, deleteCard(body));
+    return;
+  }
+  if (pathname === "/api/host/block-card" && req.method === "POST") {
+    sendJson(res, 200, blockCardConnection(body));
+    return;
+  }
+  if (pathname === "/api/host/unblock-connection" && req.method === "POST") {
+    sendJson(res, 200, unblockConnection(body));
     return;
   }
   if (pathname === "/api/host/action" && req.method === "POST") {

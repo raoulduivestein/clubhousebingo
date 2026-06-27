@@ -229,7 +229,7 @@
           <h2>Pak je kaart voordat de chaos begint</h2>
           <p class="muted">Ronde: ${escapeHtml(round.naam)}. ${round.registratie_open ? "De registratie is geopend." : "De registratie is nu gesloten."}</p>
           ${isFinished ? `<p><strong>Deze ronde is afgelopen.</strong><br>Wacht tot de host een nieuwe ronde start. Daarna kun je opnieuw registreren.</p>` : ""}
-          <p class="muted">Per ronde kan er per IP-adres maar een kaart worden aangemaakt. Als dit IP al meedoet, opent de server de bestaande kaart.</p>
+          <p class="muted">Per ronde kan er maar een kaart per deelnemer worden aangemaakt. Als je al meedoet, opent de server je bestaande kaart.</p>
           <h3>Prijs van deze ronde</h3>
           ${renderPrize(prize, true)}
         </div>
@@ -260,7 +260,7 @@
           body: JSON.stringify({ naam, clubhouse_naam: clubhouseNaam }),
         });
         localStorage.setItem(LAST_CARD_KEY, result.card.kaart_id);
-        toast(result.existing ? "Dit IP-adres had al een kaart. We openen de bestaande kaart." : "Je kaart is klaar. Welkom in het gekkenhuis.");
+        toast(result.existing ? "Je had al een kaart. We openen je bestaande kaart." : "Je kaart is klaar. Welkom in het gekkenhuis.");
         await loadState();
         window.location.hash = `#/kaart?id=${result.card.kaart_id}`;
       } catch (error) {
@@ -465,6 +465,10 @@
             <h3>Spelers en kaartnummers</h3>
             ${renderPlayersTable(cards)}
           </div>
+          <div class="panel">
+            <h3>Geblokkeerde toegang</h3>
+            ${renderBlockedConnections(state.blocked_connections || [])}
+          </div>
         </div>
       </section>
     `;
@@ -542,6 +546,19 @@
         if (!window.confirm("Weet je zeker dat je deze speler met kaart, bingo-meldingen en eventuele prijs-koppeling wilt verwijderen?")) return;
         const ok = await hostPost("/api/host/delete-card", { kaart_id: button.dataset.cardId });
         if (ok) toast("Speler verwijderd.");
+      });
+    });
+    document.querySelectorAll("[data-block-card]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (!window.confirm("Weet je zeker dat je nieuwe registraties vanaf deze speler wilt blokkeren?")) return;
+        const ok = await hostPost("/api/host/block-card", { kaart_id: button.dataset.cardId });
+        if (ok) toast("Toegang geblokkeerd.");
+      });
+    });
+    document.querySelectorAll("[data-unblock-connection]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const ok = await hostPost("/api/host/unblock-connection", { block_id: button.dataset.blockId });
+        if (ok) toast("Blokkade opgeheven.");
       });
     });
     document.querySelectorAll("[data-award-prize]").forEach((button) => {
@@ -772,7 +789,32 @@
               <td>${escapeHtml(card.kaartnummer)}</td>
               <td>${escapeHtml(card.status)}</td>
               <td><a href="#/kaart?id=${cardId}">Open kaart</a></td>
-              <td><button class="button warning" type="button" data-delete-card data-card-id="${cardId}">Verwijder</button></td>
+              <td>
+                <div class="actions">
+                  <button class="button warning" type="button" data-delete-card data-card-id="${cardId}">Verwijder</button>
+                  <button class="button secondary" type="button" data-block-card data-card-id="${cardId}">Blokkeer toegang</button>
+                </div>
+              </td>
+            </tr>`;
+          })
+          .join("")}
+      </tbody>
+    </table></div>`;
+  }
+
+  function renderBlockedConnections(blocks) {
+    if (!blocks.length) return `<div class="empty">Geen blokkades actief.</div>`;
+    return `<div class="table-wrap"><table>
+      <thead><tr><th scope="col">Geblokkeerd</th><th scope="col">Sinds</th><th scope="col">Actie</th></tr></thead>
+      <tbody>
+        ${blocks
+          .map((block) => {
+            const blockId = escapeHtml(block.block_id);
+            const created = block.aangemaakt_op ? new Date(block.aangemaakt_op).toLocaleString("nl-NL") : "-";
+            return `<tr>
+              <td>${escapeHtml(block.label || "Onbekende speler")}</td>
+              <td>${escapeHtml(created)}</td>
+              <td><button class="button secondary" type="button" data-unblock-connection data-block-id="${blockId}">Deblokkeer</button></td>
             </tr>`;
           })
           .join("")}
