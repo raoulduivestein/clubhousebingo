@@ -411,6 +411,48 @@ th {
   background: #fff3f2;
 }
 
+.prize {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  gap: 0.8rem;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 0.8rem;
+}
+
+.prize.compact {
+  grid-template-columns: 3.5rem minmax(0, 1fr);
+}
+
+.prize strong,
+.prize span {
+  display: block;
+}
+
+.prize-logo {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: contain;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 0.35rem;
+}
+
+.prize-logo.placeholder {
+  display: grid;
+  place-items: center;
+  background: var(--yellow);
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.prize-form {
+  margin-bottom: 1rem;
+}
+
 .live-screen {
   min-height: calc(100vh - 8rem);
   display: grid;

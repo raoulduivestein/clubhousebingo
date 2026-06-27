@@ -9,6 +9,8 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const DATA_FILE = process.env.DATA_FILE || path.join(DATA_DIR, "bingo-state.json");
 const TRUST_PROXY = process.env.TRUST_PROXY !== "false";
 const HOST_PIN = process.env.HOST_PIN || "";
+const HOST_USER = process.env.HOST_USER || "";
+const HOST_PASSWORD = process.env.HOST_PASSWORD || "";
 
 const LETTERS = ["B", "I", "N", "G", "O"];
 const RANGES = {
@@ -49,18 +51,32 @@ function seedState() {
         gestart_op: null,
         beeindigd_op: null,
         winnaars: [],
+        prijs_id: null,
       },
     ],
     cards: [],
     drawings: [],
     claims: [],
+    prizes: [],
     cardCounter: 1000,
   };
 }
 
 function readState() {
   ensureDataFile();
-  return JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+  const state = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+  migrateState(state);
+  return state;
+}
+
+function migrateState(state) {
+  if (!Array.isArray(state.prizes)) state.prizes = [];
+  for (const round of state.rounds || []) {
+    if (!Object.prototype.hasOwnProperty.call(round, "prijs_id")) round.prijs_id = null;
+  }
+  for (const prize of state.prizes) {
+    if (!Object.prototype.hasOwnProperty.call(prize, "status")) prize.status = prize.toegekend_aan_claim_id ? "awarded" : "available";
+  }
 }
 
 function writeState(state) {
@@ -90,6 +106,10 @@ function cardById(state, cardId) {
 
 function playerById(state, playerId) {
   return state.players.find((player) => player.speler_id === playerId);
+}
+
+function prizeById(state, prizeId) {
+  return state.prizes.find((prize) => prize.prijs_id === prizeId);
 }
 
 function shuffle(values) {
@@ -206,6 +226,16 @@ function hashIp(ip) {
 }
 
 function assertHost(req) {
+  if (HOST_USER || HOST_PASSWORD) {
+    const user = req.headers["x-host-user"];
+    const password = req.headers["x-host-password"];
+    if (user !== HOST_USER || password !== HOST_PASSWORD) {
+      const err = new Error("Host gebruikersnaam of wachtwoord klopt niet.");
+      err.statusCode = 401;
+      throw err;
+    }
+    return;
+  }
   if (!HOST_PIN) return;
   const pin = req.headers["x-host-pin"];
   if (pin !== HOST_PIN) {
@@ -327,7 +357,70 @@ function updateRound(body) {
     const round = activeRound(state);
     if (typeof body.naam === "string" && body.naam.trim()) round.naam = body.naam.trim().slice(0, 120);
     if (typeof body.bingo_type === "string") round.bingo_type = body.bingo_type;
+    if (Object.prototype.hasOwnProperty.call(body, "prijs_id")) {
+      const prizeId = body.prijs_id ? String(body.prijs_id) : null;
+      if (prizeId && !prizeById(state, prizeId)) {
+        const err = new Error("Deze prijs bestaat niet.");
+        err.statusCode = 400;
+        throw err;
+      }
+      round.prijs_id = prizeId;
+    }
     return { round };
+  });
+}
+
+function createPrize(body) {
+  const naam = String(body.naam || "").trim().slice(0, 120);
+  const soort = String(body.soort || "Cadeaubon").trim().slice(0, 60);
+  const bedrag = String(body.bedrag || "").trim().slice(0, 40);
+  const logoUrl = String(body.logo_url || "").trim().slice(0, 500);
+  const omschrijving = String(body.omschrijving || "").trim().slice(0, 500);
+  if (!naam) {
+    const err = new Error("Prijsnaam is verplicht.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  return mutateState((state) => {
+    const prize = {
+      prijs_id: uid("prijs"),
+      naam,
+      soort,
+      bedrag,
+      logo_url: logoUrl,
+      omschrijving,
+      status: "available",
+      toegekend_aan_claim_id: null,
+      toegekend_op: null,
+      aangemaakt_op: nowIso(),
+    };
+    state.prizes.push(prize);
+    return { prize };
+  });
+}
+
+function awardPrize(body) {
+  const prizeId = String(body.prijs_id || "");
+  const claimId = String(body.claim_id || "");
+  return mutateState((state) => {
+    const prize = prizeById(state, prizeId);
+    const claim = state.claims.find((item) => item.claim_id === claimId);
+    if (!prize) {
+      const err = new Error("Deze prijs bestaat niet.");
+      err.statusCode = 404;
+      throw err;
+    }
+    if (!claim || claim.status !== "valid") {
+      const err = new Error("Prijs kan alleen aan een geldige bingo worden toegekend.");
+      err.statusCode = 400;
+      throw err;
+    }
+    prize.status = "awarded";
+    prize.toegekend_aan_claim_id = claim.claim_id;
+    prize.toegekend_op = nowIso();
+    claim.prijs_id = prize.prijs_id;
+    return { prize, claim };
   });
 }
 
@@ -362,6 +455,7 @@ function setRoundStatus(action) {
         gestart_op: null,
         beeindigd_op: null,
         winnaars: [],
+        prijs_id: null,
       };
       state.rounds.push(nextRound);
       state.activeRoundId = roundId;
@@ -489,6 +583,14 @@ async function handleApi(req, res, pathname) {
     sendJson(res, 200, updateRound(body));
     return;
   }
+  if (pathname === "/api/host/prizes" && req.method === "POST") {
+    sendJson(res, 200, createPrize(body));
+    return;
+  }
+  if (pathname === "/api/host/award-prize" && req.method === "POST") {
+    sendJson(res, 200, awardPrize(body));
+    return;
+  }
   if (pathname === "/api/host/action" && req.method === "POST") {
     sendJson(res, 200, setRoundStatus(String(body.action || "")));
     return;
@@ -522,5 +624,6 @@ const server = http.createServer(async (req, res) => {
 ensureDataFile();
 server.listen(PORT, () => {
   console.log(`Gekkenhuis Bingo draait op http://127.0.0.1:${PORT}`);
-  if (HOST_PIN) console.log("Host PIN beveiliging staat aan.");
+  if (HOST_USER || HOST_PASSWORD) console.log("Host login beveiliging staat aan.");
+  else if (HOST_PIN) console.log("Host PIN beveiliging staat aan.");
 });

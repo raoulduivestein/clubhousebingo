@@ -31,7 +31,8 @@ Optionele environment variables:
 ```bash
 PORT=3000
 DATA_DIR=/var/lib/gekkenhuis-bingo
-HOST_PIN=sterke-host-pin
+HOST_USER=hostnaam
+HOST_PASSWORD=sterk-wachtwoord
 TRUST_PROXY=true
 ```
 
@@ -58,3 +59,17 @@ Standaard wordt de data opgeslagen in `data/bingo-state.json`. Die map staat in 
 ## Kaartlimiet
 
 Per ronde kan hetzelfde IP-adres maar een bingokaart krijgen. Als iemand vanaf hetzelfde IP opnieuw registreert, geeft de server de bestaande kaart terug in plaats van een nieuwe kaart te maken.
+
+## Host login en prijzen
+
+Host-acties kunnen worden beveiligd met `HOST_USER` en `HOST_PASSWORD`. Als die environment variables zijn ingesteld, vraagt het hostdashboard bij de eerste host-actie om gebruikersnaam en wachtwoord.
+
+In het hostdashboard kun je prijzen toevoegen met:
+
+- naam
+- soort, bijvoorbeeld voucher of cadeaubon
+- bedrag
+- logo URL
+- omschrijving
+
+Daarna kun je per ronde kiezen waarvoor gespeeld wordt. Bij een geldige bingo kan de host de prijs via de bingo-melding aan de winnaar toekennen.
