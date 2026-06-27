@@ -491,6 +491,36 @@ function deleteRound(body) {
   });
 }
 
+function deleteCard(body) {
+  const cardId = String(body.kaart_id || "");
+  return mutateState((state) => {
+    const card = cardById(state, cardId);
+    if (!card) {
+      const err = new Error("Deze speler of kaart bestaat niet.");
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const removedClaimIds = new Set(state.claims.filter((claim) => claim.kaart_id === cardId).map((claim) => claim.claim_id));
+    state.cards = state.cards.filter((item) => item.kaart_id !== cardId);
+    state.claims = state.claims.filter((claim) => claim.kaart_id !== cardId);
+    for (const round of state.rounds) {
+      round.winnaars = (round.winnaars || []).filter((claimId) => !removedClaimIds.has(claimId));
+    }
+    for (const prize of state.prizes) {
+      if (removedClaimIds.has(prize.toegekend_aan_claim_id)) {
+        prize.status = "available";
+        prize.toegekend_aan_claim_id = null;
+        prize.toegekend_op = null;
+      }
+    }
+    if (!state.cards.some((item) => item.speler_id === card.speler_id)) {
+      state.players = state.players.filter((player) => player.speler_id !== card.speler_id);
+    }
+    return { deleted: true };
+  });
+}
+
 function getPrizeCode(req) {
   const searchParams = new URL(req.url, "http://localhost").searchParams;
   const claimId = String(searchParams.get("claim_id") || "");
@@ -725,6 +755,10 @@ async function handleApi(req, res, pathname) {
   }
   if (pathname === "/api/host/delete-round" && req.method === "POST") {
     sendJson(res, 200, deleteRound(body));
+    return;
+  }
+  if (pathname === "/api/host/delete-card" && req.method === "POST") {
+    sendJson(res, 200, deleteCard(body));
     return;
   }
   if (pathname === "/api/host/action" && req.method === "POST") {

@@ -80,3 +80,5 @@ Prijscodes worden niet meegestuurd in de algemene speldata. De code wordt pas op
 Prijzen kunnen in het hostdashboard ook worden aangepast of verwijderd. Een lege code bij aanpassen behoudt de bestaande code. Toegekende prijzen kunnen niet worden verwijderd.
 
 Oude rondes kunnen vanuit het hostdashboard worden verwijderd. Daarbij worden de kaarten, trekkingen en bingo-meldingen van die ronde ook opgeruimd. De actieve ronde kan niet worden verwijderd; start eerst een nieuwe ronde.
+
+Spelers kunnen vanuit het hostdashboard per kaart worden verwijderd. Bij verwijderen worden bijbehorende bingo-meldingen verwijderd en een eventueel gekoppelde prijs weer vrijgegeven.

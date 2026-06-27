@@ -537,6 +537,13 @@
         if (ok) toast("Ronde verwijderd.");
       });
     });
+    document.querySelectorAll("[data-delete-card]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (!window.confirm("Weet je zeker dat je deze speler met kaart, bingo-meldingen en eventuele prijs-koppeling wilt verwijderen?")) return;
+        const ok = await hostPost("/api/host/delete-card", { kaart_id: button.dataset.cardId });
+        if (ok) toast("Speler verwijderd.");
+      });
+    });
     document.querySelectorAll("[data-award-prize]").forEach((button) => {
       button.addEventListener("click", async () => {
         const ok = await hostPost("/api/host/award-prize", {
@@ -753,17 +760,19 @@
   function renderPlayersTable(cards) {
     if (!cards.length) return `<div class="empty">Nog geen spelers. Pak je kaart voordat de chaos begint.</div>`;
     return `<div class="table-wrap"><table>
-      <thead><tr><th scope="col">Naam</th><th scope="col">Clubhouse</th><th scope="col">Kaart</th><th scope="col">Status</th><th scope="col">Link</th></tr></thead>
+      <thead><tr><th scope="col">Naam</th><th scope="col">Clubhouse</th><th scope="col">Kaart</th><th scope="col">Status</th><th scope="col">Link</th><th scope="col">Actie</th></tr></thead>
       <tbody>
         ${cards
           .map((card) => {
             const player = playerById(card.speler_id);
+            const cardId = escapeHtml(card.kaart_id);
             return `<tr>
               <td>${escapeHtml(player?.naam || "")}</td>
               <td>${escapeHtml(player?.clubhouse_naam || "")}</td>
               <td>${escapeHtml(card.kaartnummer)}</td>
               <td>${escapeHtml(card.status)}</td>
-              <td><a href="#/kaart?id=${card.kaart_id}">Open kaart</a></td>
+              <td><a href="#/kaart?id=${cardId}">Open kaart</a></td>
+              <td><button class="button warning" type="button" data-delete-card data-card-id="${cardId}">Verwijder</button></td>
             </tr>`;
           })
           .join("")}
