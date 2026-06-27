@@ -79,6 +79,7 @@ function migrateState(state) {
   for (const prize of state.prizes) {
     if (!Object.prototype.hasOwnProperty.call(prize, "status")) prize.status = prize.toegekend_aan_claim_id ? "awarded" : "available";
     if (!Object.prototype.hasOwnProperty.call(prize, "code")) prize.code = "";
+    if (!Object.prototype.hasOwnProperty.call(prize, "pincode")) prize.pincode = "";
   }
 }
 
@@ -95,7 +96,7 @@ function publicState(state) {
       aangemaakt_op: block.aangemaakt_op,
     })),
     prizes: state.prizes.map((prize) => {
-      const { code, ...publicPrize } = prize;
+      const { code, pincode, ...publicPrize } = prize;
       return publicPrize;
     }),
   };
@@ -406,6 +407,7 @@ function prizeInput(body) {
     logo_url: String(body.logo_url || "").trim().slice(0, 500),
     omschrijving: String(body.omschrijving || "").trim().slice(0, 500),
     code: String(body.code || "").trim().slice(0, 200),
+    pincode: String(body.pincode || "").trim().slice(0, 120),
   };
   return input;
 }
@@ -438,6 +440,9 @@ function updatePrize(body) {
   const input = prizeInput(body);
   if (!Object.prototype.hasOwnProperty.call(body, "code") || !input.code) {
     delete input.code;
+  }
+  if (!Object.prototype.hasOwnProperty.call(body, "pincode") || !input.pincode) {
+    delete input.pincode;
   }
   if (!input.naam) {
     const err = new Error("Prijsnaam is verplicht.");
@@ -604,6 +609,7 @@ function getPrizeCode(req) {
     naam: prize.naam,
     bedrag: prize.bedrag,
     code: prize.code || "",
+    pincode: prize.pincode || "",
   };
 }
 

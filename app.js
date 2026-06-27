@@ -373,6 +373,10 @@
         <label class="field">
           <span>Jouw prijscode</span>
           <input readonly value="${escapeHtml(result.code || "Geen code ingevuld")}" aria-label="Jouw prijscode" />
+        </label>
+        <label class="field">
+          <span>Jouw pincode</span>
+          <input readonly value="${escapeHtml(result.pincode || "Geen pincode ingevuld")}" aria-label="Jouw pincode" />
         </label>`;
       announce("Je prijscode is beschikbaar.");
     } catch (error) {
@@ -505,6 +509,7 @@
         bedrag: form.get("bedrag"),
         logo_url: form.get("logo_url"),
         code: form.get("code"),
+        pincode: form.get("pincode"),
         omschrijving: form.get("omschrijving"),
       });
       if (ok) toast("Prijs toegevoegd.");
@@ -522,7 +527,9 @@
           omschrijving: form.get("omschrijving"),
         };
         const code = String(form.get("code") || "").trim();
+        const pincode = String(form.get("pincode") || "").trim();
         if (code) payload.code = code;
+        if (pincode) payload.pincode = pincode;
         const ok = await hostPost("/api/host/update-prize", payload);
         if (ok) toast("Prijs bijgewerkt.");
       });
@@ -700,6 +707,10 @@
         <input id="prize-code" name="code" maxlength="200" placeholder="Bijvoorbeeld ABCD-1234-EFGH" />
       </div>
       <div class="field">
+        <label for="prize-pincode">Pincode</label>
+        <input id="prize-pincode" name="pincode" maxlength="120" placeholder="Bijvoorbeeld 1234" />
+      </div>
+      <div class="field">
         <label for="prize-description">Omschrijving</label>
         <input id="prize-description" name="omschrijving" maxlength="500" placeholder="Waarvoor speelt de winnaar?" />
       </div>
@@ -734,6 +745,10 @@
           <div class="field">
             <label for="edit-prize-code-${prizeId}">Nieuwe of gewijzigde prijs code</label>
             <input id="edit-prize-code-${prizeId}" name="code" maxlength="200" placeholder="Laat leeg om bestaande code te behouden" />
+          </div>
+          <div class="field">
+            <label for="edit-prize-pincode-${prizeId}">Nieuwe of gewijzigde pincode</label>
+            <input id="edit-prize-pincode-${prizeId}" name="pincode" maxlength="120" placeholder="Laat leeg om bestaande pincode te behouden" />
           </div>
           <div class="field">
             <label for="edit-prize-description-${prizeId}">Omschrijving</label>

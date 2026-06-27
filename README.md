@@ -70,13 +70,14 @@ In het hostdashboard kun je prijzen toevoegen met:
 - bedrag
 - logo URL
 - prijs code, bijvoorbeeld een voucher- of cadeauboncode
+- pincode
 - omschrijving
 
 Daarna kun je per ronde kiezen waarvoor gespeeld wordt. Bij een geldige bingo kan de host de prijs via de bingo-melding aan de winnaar toekennen.
 
-Prijscodes worden niet meegestuurd in de algemene speldata. De code wordt pas opgehaald op de persoonlijke kaart van de winnaar nadat de host de prijs heeft toegekend.
+Prijscodes en pincodes worden niet meegestuurd in de algemene speldata. De code en pincode worden pas opgehaald op de persoonlijke kaart van de winnaar nadat de host de prijs heeft toegekend.
 
-Prijzen kunnen in het hostdashboard ook worden aangepast of verwijderd. Een lege code bij aanpassen behoudt de bestaande code. Toegekende prijzen kunnen niet worden verwijderd.
+Prijzen kunnen in het hostdashboard ook worden aangepast of verwijderd. Een lege code of pincode bij aanpassen behoudt de bestaande waarde. Toegekende prijzen kunnen niet worden verwijderd.
 
 Oude rondes kunnen vanuit het hostdashboard worden verwijderd. Daarbij worden de kaarten, trekkingen en bingo-meldingen van die ronde ook opgeruimd. De actieve ronde kan niet worden verwijderd; start eerst een nieuwe ronde.
 
