@@ -23,6 +23,7 @@
   let state = null;
   let loading = false;
   let lastAnnouncedDrawingId = null;
+  let hostAuthenticated = false;
 
   async function api(path, options = {}) {
     const headers = {
@@ -353,6 +354,13 @@
   }
 
   function renderHost() {
+    const hostUser = localStorage.getItem("gekkenhuis-host-user") || "";
+    const hostPassword = localStorage.getItem("gekkenhuis-host-password") || "";
+    if (!hostAuthenticated || !hostUser || !hostPassword) {
+      renderHostLogin(hostUser);
+      return;
+    }
+
     const round = activeRound();
     const cards = state.cards.filter((card) => card.ronde_id === round.ronde_id);
     const drawings = drawingsFor(round.ronde_id);
@@ -397,6 +405,7 @@
             <button class="button secondary" id="pause-game">${round.status === "paused" ? "Hervat spel" : "Pauzeer spel"}</button>
             <button class="button warning" id="finish-round">Sluit ronde</button>
             <button class="button secondary" id="new-round">Nieuwe ronde</button>
+            <button class="button secondary" id="host-logout">Log uit</button>
           </div>
         </aside>
         <div class="grid">
@@ -446,6 +455,12 @@
     document.querySelector("#pause-game").addEventListener("click", () => hostAction("pause"));
     document.querySelector("#finish-round").addEventListener("click", () => hostAction("finish", "De ronde is gesloten."));
     document.querySelector("#new-round").addEventListener("click", () => hostAction("new", "Nieuwe ronde gestart. De registratie is geopend."));
+    document.querySelector("#host-logout").addEventListener("click", () => {
+      hostAuthenticated = false;
+      localStorage.removeItem("gekkenhuis-host-user");
+      localStorage.removeItem("gekkenhuis-host-password");
+      render();
+    });
     document.querySelector("#prize-form").addEventListener("submit", async (event) => {
       event.preventDefault();
       const form = new FormData(event.currentTarget);
@@ -469,6 +484,52 @@
     });
   }
 
+  function renderHostLogin(username = "") {
+    app.innerHTML = `
+      <section class="grid two-col">
+        <div class="panel">
+          <p class="eyebrow">Host login</p>
+          <h2>Beheer is afgeschermd</h2>
+          <p class="muted">Log in als host om rondes, ballen, prijzen en winnaars te beheren.</p>
+        </div>
+        <form class="panel form" id="host-login-form">
+          <div class="field">
+            <label for="host-user">Gebruikersnaam</label>
+            <input id="host-user" name="username" autocomplete="username" required value="${escapeHtml(username)}" />
+          </div>
+          <div class="field">
+            <label for="host-password">Wachtwoord</label>
+            <input id="host-password" name="password" type="password" autocomplete="current-password" required />
+          </div>
+          <button class="button" type="submit">Log in</button>
+        </form>
+      </section>
+    `;
+
+    document.querySelector("#host-login-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      const user = String(form.get("username") || "");
+      const password = String(form.get("password") || "");
+      try {
+        await api("/api/host/auth-check", {
+          method: "POST",
+          headers: { "X-Host-User": user, "X-Host-Password": password },
+          body: JSON.stringify({}),
+        });
+        localStorage.setItem("gekkenhuis-host-user", user);
+        localStorage.setItem("gekkenhuis-host-password", password);
+        hostAuthenticated = true;
+        toast("Host ingelogd.");
+        render();
+      } catch (error) {
+        hostAuthenticated = false;
+        localStorage.removeItem("gekkenhuis-host-password");
+        toast(error.message);
+      }
+    });
+  }
+
   async function hostPost(path, body) {
     try {
       const hostUser = localStorage.getItem("gekkenhuis-host-user") || "";
@@ -485,13 +546,10 @@
       await loadState();
     } catch (error) {
       if (error.message.includes("wachtwoord") || error.message.includes("PIN")) {
-        const user = window.prompt("Host gebruikersnaam");
-        const password = window.prompt("Host wachtwoord");
-        if (user || password) {
-          localStorage.setItem("gekkenhuis-host-user", user || "");
-          localStorage.setItem("gekkenhuis-host-password", password || "");
-          return hostPost(path, body);
-        }
+        hostAuthenticated = false;
+        localStorage.removeItem("gekkenhuis-host-password");
+        renderHostLogin(localStorage.getItem("gekkenhuis-host-user") || "");
+        return;
       }
       toast(error.message);
     }

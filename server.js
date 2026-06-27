@@ -579,6 +579,10 @@ async function handleApi(req, res, pathname) {
 
   if (pathname.startsWith("/api/host/")) assertHost(req);
 
+  if (pathname === "/api/host/auth-check" && req.method === "POST") {
+    sendJson(res, 200, { ok: true });
+    return;
+  }
   if (pathname === "/api/host/round" && req.method === "POST") {
     sendJson(res, 200, updateRound(body));
     return;
